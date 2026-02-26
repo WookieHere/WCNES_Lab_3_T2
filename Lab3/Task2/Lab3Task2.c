@@ -8,7 +8,7 @@
 #include "dev/leds.h"
 #define DEBUG DEBUG_PRINT
 #include "net/ipv6/uip-debug.h"
-
+#include <stdlib.h>
 #include "sys/log.h"
      #define LOG_MODULE "App"
      #define LOG_LEVEL LOG_LEVEL_DBG
@@ -20,8 +20,10 @@ AUTOSTART_PROCESSES(&node_process);
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(node_process, ev, data)
 {
-  int is_coordinator;
-
+  int is_coordinator = 0;
+  int intermediate = 0;
+  int end = 0;
+//  uip_ipaddr_t* root_addr = malloc(sizeof(uip_ipaddr_t));
   PROCESS_BEGIN();
 
   is_coordinator = 0;
@@ -30,7 +32,9 @@ PROCESS_THREAD(node_process, ev, data)
 
   if(is_coordinator) {
     NETSTACK_ROUTING.root_start();
+    leds_toggle(LEDS_GREEN);
   }
+
   NETSTACK_MAC.on();
 
   {
@@ -40,14 +44,37 @@ PROCESS_THREAD(node_process, ev, data)
     while(1) {
         LOG_INFO("Routing entries: %u\n", uip_ds6_route_num_routes());
         uip_ds6_route_t *route = uip_ds6_route_head();
+	if(NETSTACK_ROUTING.node_has_joined()) {
+		end = 1;
+	}
       	while(route) {
+//		was_visited = 1;
 		LOG_INFO("Route ");
 		LOG_INFO_6ADDR(&route->ipaddr);
 		LOG_INFO_(" via ");
 		LOG_INFO_6ADDR(uip_ds6_route_nexthop(route));
 		LOG_INFO_("\n");
 		route = uip_ds6_route_next(route);
+		if(NETSTACK_ROUTING.node_is_reachable()) {
+			intermediate = 1;
+		} else {
+			end = 1;
+		}
 	}
+	if(!is_coordinator) {
+		if(intermediate) {
+			leds_on(LEDS_YELLOW);
+			leds_off(LEDS_RED);
+		} else if(end) {
+			leds_on(LEDS_RED);
+			leds_off(LEDS_YELLOW);
+		}else {
+			leds_off(LEDS_YELLOW);
+			leds_off(LEDS_RED);
+		}
+	}
+	intermediate = 0;
+	end = 0;
       	PROCESS_YIELD_UNTIL(etimer_expired(&et));
       	etimer_reset(&et);
     }
